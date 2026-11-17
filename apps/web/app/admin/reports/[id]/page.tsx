@@ -23,7 +23,11 @@ export default function AdminReportPage() {
 
   return (
     <>
-      <h2>신고 #{r.report_no} <span className="muted">[{r.report_status}]</span></h2>
+      <div className="page-head">
+        <h1>
+          신고 {r.report_no}번 <span className="status" data-s={r.report_status}>{r.report_status}</span>
+        </h1>
+      </div>
       <table>
         <tbody>
           <tr><th>신고자</th><td><Link href={`/admin/members/${r.reporter_no}`}>{r.reporter_nickname}</Link></td></tr>

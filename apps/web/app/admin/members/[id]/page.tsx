@@ -22,7 +22,11 @@ export default function AdminMemberPage() {
 
   return (
     <>
-      <h2>회원 #{m.member_no} {m.nickname}</h2>
+      <div className="page-head">
+        <h1>
+          {m.nickname} <span className="muted">회원 {m.member_no}번</span>
+        </h1>
+      </div>
       <table>
         <tbody>
           <tr><th>성명</th><td>{m.name}</td><th>권한</th><td>{m.role}</td></tr>

@@ -9,9 +9,13 @@ export default function NewProductPage() {
   const router = useRouter();
   return (
     <>
-      <h2>상품 등록</h2>
+      <div className="page-head">
+        <h1>
+          내 물건 팔기
+        </h1>
+      </div>
       <ProductForm
-        submitLabel="등록"
+        submitLabel="판매 글 올리기"
         onSubmit={(f) => {
           let no = 0;
           act(

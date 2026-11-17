@@ -13,10 +13,14 @@ export default function EditProductPage() {
   if (!data) return null;
   return (
     <>
-      <h2>상품 수정</h2>
+      <div className="page-head">
+        <h1>
+          판매 글 수정
+        </h1>
+      </div>
       <ProductForm
         initial={data}
-        submitLabel="저장"
+        submitLabel="수정 내용 저장"
         onSubmit={(f) => act(() => api(`/products/${id}`, { method: "PUT", body: f }), () => router.push(`/products/${id}`))}
       />
     </>

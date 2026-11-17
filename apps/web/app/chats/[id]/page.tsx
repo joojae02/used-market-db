@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useRef } from "react";
+import Status from "@/components/Status";
 import { api, dt } from "@/lib/api";
 import { act, useLoad, useSession } from "@/lib/hooks";
 
@@ -12,6 +13,7 @@ type Room = {
   title: string;
   trade_status: string;
   room_status: string;
+  seller_no: number;
   seller_nickname: string;
   buyer_nickname: string;
   can_send: boolean;
@@ -22,39 +24,52 @@ export default function ChatRoomPage() {
   const { id } = useParams<{ id: string }>();
   const session = useSession();
   const { data: room, error, reload } = useLoad<Room>(`/chats/${id}`);
-  const bottom = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
   // 데모라 웹소켓 대신 3초 폴링
   useEffect(() => {
     const t = setInterval(reload, 3000);
     return () => clearInterval(t);
   }, [reload]);
-  useEffect(() => bottom.current?.scrollIntoView(), [room?.messages.length]);
+  useEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [room?.messages.length]);
 
   if (error) return <p className="error">{error}</p>;
   if (!room) return null;
   const me = session?.member.member_no;
+  const other = me === room.seller_no ? room.buyer_nickname : room.seller_nickname;
 
   return (
     <>
-      <h3>
-        <Link href={`/products/${room.product_no}`}>{room.title}</Link> <span className="muted">[{room.trade_status}]</span>
-      </h3>
-      <p className="muted">
-        판매자 {room.seller_nickname} · 구매자 {room.buyer_nickname} · 방 상태 {room.room_status}
-      </p>
-      <div className="chat">
-        {room.messages.map((m) => (
-          <div key={m.message_no} className={`msg ${m.sender_no === me ? "mine" : ""}`}>
-            <div className="muted">{m.sender_nickname} · {dt(m.sent_at)} {m.sender_no === me && (m.read_at ? "읽음" : "안읽음")}</div>
-            {m.content}
-          </div>
-        ))}
-        <div ref={bottom} />
+      <div className="room-head">
+        <div>
+          <h1>
+            {other}
+          </h1>
+          <Link href={`/products/${room.product_no}`}>{room.title}</Link>
+        </div>
+        <Status value={room.trade_status} />
+      </div>
+      <div className="chat" ref={list} aria-live="polite">
+        {room.messages.length === 0 && <p className="muted">첫 메시지를 보내보세요.</p>}
+        {room.messages.map((m) => {
+          const mine = m.sender_no === me;
+          return (
+            <div key={m.message_no} className={`msg${mine ? " mine" : ""}`}>
+              <div className="msg-body">{m.content}</div>
+              <div className="msg-meta">
+                {dt(m.sent_at).slice(11)}
+                {mine && !m.read_at && " 안 읽음"}
+              </div>
+            </div>
+          );
+        })}
       </div>
       {room.can_send ? (
         <form
-          className="row"
+          className="composer"
           onSubmit={(e) => {
             e.preventDefault();
             const form = e.currentTarget;
@@ -65,11 +80,13 @@ export default function ChatRoomPage() {
             });
           }}
         >
-          <input name="content" placeholder="메시지" required style={{ flex: 1 }} autoComplete="off" />
-          <button>전송</button>
+          <input name="content" placeholder="메시지 보내기" aria-label="메시지" required autoComplete="off" />
+          <button className="primary">보내기</button>
         </form>
       ) : (
-        <p className="muted">메시지를 보낼 수 없는 채팅방입니다.</p>
+        <p className="closed-note">
+          {room.room_status === "비활성" ? "다른 구매자와 거래가 끝나서 대화가 닫혔어요." : "거래 완료 후 30일이 지나 대화가 닫혔어요."} 이전 대화는 계속 볼 수 있어요.
+        </p>
       )}
     </>
   );

@@ -10,18 +10,18 @@ export default function Nav() {
   const router = useRouter();
   return (
     <nav>
-      <Link href="/">
-        <b>중고마켓</b>
+      <Link href="/" className="wordmark">
+        중고마켓
       </Link>
+      <div className="nav-links">
+        {session && <Link href="/products/new">판매하기</Link>}
+        {session && <Link href="/chats">채팅</Link>}
+        {session && <Link href="/me">내 정보</Link>}
+        {isAdmin(session) && <Link href="/admin">운영 관리</Link>}
+      </div>
       {session ? (
-        <>
-          <Link href="/products/new">상품 등록</Link>
-          <Link href="/chats">채팅</Link>
-          <Link href="/me">내 정보</Link>
-          {isAdmin(session) && <Link href="/admin">관리자</Link>}
-          <span className="muted">
-            {session.member.nickname} ({session.member.role})
-          </span>
+        <div className="row">
+          <span className="whoami">{session.member.nickname}</span>
           <button
             onClick={() => {
               setSession(null);
@@ -30,12 +30,16 @@ export default function Nav() {
           >
             로그아웃
           </button>
-        </>
+        </div>
       ) : (
-        <>
-          <Link href="/login">로그인</Link>
-          <Link href="/signup">회원가입</Link>
-        </>
+        <div className="row">
+          <Link href="/signup" className="button">
+            회원가입
+          </Link>
+          <Link href="/login" className="button primary">
+            로그인
+          </Link>
+        </div>
       )}
     </nav>
   );

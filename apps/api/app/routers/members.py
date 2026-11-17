@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 
 import pymysql
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from ..auth import current_member, hash_password, issue_token, verify_password
 from ..db import execute, fetch_all, fetch_one, get_db
@@ -21,7 +21,8 @@ class SignupIn(BaseModel):
     phone: str = Field(pattern=r"^01[0-9]-?\d{3,4}-?\d{4}$")
     birth_date: date | None = None
     address: str | None = Field(None, max_length=200)
-    email: EmailStr
+    # EmailStr 은 sample_data 의 @market.test 같은 예약 도메인을 거부해서 형식만 확인
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$", max_length=100)
     password: str = Field(min_length=4, max_length=100)
 
 
@@ -38,12 +39,30 @@ def _duplicate_message(e: pymysql.err.IntegrityError) -> str:
     return "중복된 정보가 있습니다."
 
 
+def _normalize_phone(phone: str) -> str:
+    digits = phone.replace("-", "")
+    return f"{digits[:3]}-{digits[3:-4]}-{digits[-4:]}"  # sample_data 와 같은 010-0000-0000 형식
+
+
+@router.get("/auth/check")
+def check_duplicate(nickname: str | None = None, email: str | None = None, phone: str | None = None, conn=Depends(get_db)):
+    """MEM-01 중복 확인 (기술서 MEM-01 ③): 넘긴 값마다 사용 가능 여부. 재가입 가능한 탈퇴 이메일은 사용 가능."""
+    result = {}
+    if nickname:
+        result["nickname"] = not fetch_one(conn, "SELECT 1 FROM member WHERE nickname=%s", (nickname,))
+    if email:
+        result["email"] = not fetch_one(
+            conn, "SELECT 1 FROM member WHERE email=%s AND account_status<>'탈퇴'", (email,)
+        )
+    if phone:
+        result["phone"] = not fetch_one(conn, "SELECT 1 FROM member WHERE phone=%s", (_normalize_phone(phone),))
+    return result
+
+
 @router.post("/auth/signup", status_code=201)
 def signup(body: SignupIn, conn=Depends(get_db)):
-    digits = body.phone.replace("-", "")
-    phone = f"{digits[:3]}-{digits[3:-4]}-{digits[-4:]}"  # sample_data 와 같은 010-0000-0000 형식
     params = (
-        body.name, body.nickname, phone, body.birth_date,
+        body.name, body.nickname, _normalize_phone(body.phone), body.birth_date,
         body.address, body.email, hash_password(body.password),
     )
     # 회의록 11/10: 탈퇴 회원은 같은 row 를 '정상'으로 되돌려 재사용 (이메일로 식별)

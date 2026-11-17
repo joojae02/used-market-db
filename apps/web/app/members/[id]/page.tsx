@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import PriceTag from "@/components/PriceTag";
 import ReportButton from "@/components/ReportButton";
-import { dt, won } from "@/lib/api";
+import Status from "@/components/Status";
+import { dt } from "@/lib/api";
 import { useLoad, useSession } from "@/lib/hooks";
 
 type Profile = {
@@ -22,17 +24,25 @@ export default function MemberPage() {
   if (!m) return null;
   return (
     <>
-      <h2>{m.nickname}</h2>
-      <p className="muted">가입 {dt(m.joined_at)} · {m.account_status}</p>
+      <h1>{m.nickname}</h1>
+      <p className="muted">
+        {dt(m.joined_at).slice(0, 10)} 가입 {m.account_status !== "정상" && <Status value={m.account_status} />}
+      </p>
       {session && session.member.member_no !== m.member_no && <ReportButton targetType="회원" targetNo={m.member_no} />}
-      <h3>판매 상품</h3>
-      <ul>
-        {m.products.map((p) => (
-          <li key={p.product_no}>
-            <Link href={`/products/${p.product_no}`}>{p.title}</Link> {won(p.price)} [{p.trade_status}]
-          </li>
-        ))}
-      </ul>
+      <h3>판매 물건 {m.products.length}개</h3>
+      <div className="table-wrap">
+        <table>
+          <tbody>
+            {m.products.map((p) => (
+              <tr key={p.product_no}>
+                <td><Link href={`/products/${p.product_no}`}>{p.title}</Link></td>
+                <td><PriceTag price={p.price} /></td>
+                <td><Status value={p.trade_status} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </>
   );
 }

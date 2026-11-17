@@ -8,7 +8,7 @@ from ..db import execute, fetch_all, fetch_one, get_db
 
 router = APIRouter(tags=["chats"])
 
-FOLLOW_UP_DAYS = 30  # TRD-04 ⑩ 거래 완료 후 1개월간 최종 구매자 방 유지
+FOLLOW_UP_DAYS = 30  # TRD-05 (기술서 TRD-04 ⑩) 거래 완료 후 1개월간 최종 구매자 방 유지
 
 
 class MessageIn(BaseModel):
@@ -61,6 +61,9 @@ def open_chat(product_no: int, member=Depends(current_member), conn=Depends(get_
     # TRD-01 ⑦
     if p["trade_status"] == "판매완료" or p["post_status"] != "정상":
         raise HTTPException(409, "거래가 끝났거나 게시가 중단된 상품입니다.")
+    seller = fetch_one(conn, "SELECT account_status FROM member WHERE member_no=%s", (p["seller_no"],))
+    if seller["account_status"] != "정상":  # 탈퇴·이용정지 판매자와는 새 거래를 시작하지 않는다
+        raise HTTPException(409, f"판매자 계정이 '{seller['account_status']}' 상태라 채팅할 수 없습니다.")
     room_no = execute(
         conn,
         "INSERT INTO chat_room (product_no, seller_no, buyer_no) VALUES (%s,%s,%s)",

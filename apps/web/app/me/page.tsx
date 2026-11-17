@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Status from "@/components/Status";
 import { api, dt, setSession, won } from "@/lib/api";
 import { act, useLoad } from "@/lib/hooks";
 
@@ -21,7 +22,9 @@ export default function MePage() {
 
   return (
     <>
-      <h2>내 정보</h2>
+      <div className="page-head">
+        <h1>내 정보</h1>
+      </div>
       <table>
         <tbody>
           <tr><th>회원번호</th><td>{me.member_no}</td><th>권한</th><td>{me.role}</td></tr>
@@ -39,7 +42,7 @@ export default function MePage() {
           {products?.map((p) => (
             <tr key={p.product_no}>
               <td><Link href={`/products/${p.product_no}`}>{p.title}</Link></td>
-              <td>{won(p.price)}</td><td>{p.trade_status}</td><td>{p.post_status}</td><td>{dt(p.registered_at)}</td>
+              <td>{won(p.price)}</td><td><Status value={p.trade_status} /></td><td><Status value={p.post_status} /></td><td>{dt(p.registered_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -58,20 +61,24 @@ export default function MePage() {
         </tbody>
       </table>
 
-      <h3>내 신고</h3>
+      <h3>
+        내 신고
+      </h3>
       <table>
         <thead><tr><th>번호</th><th>대상</th><th>사유</th><th>상태</th><th>일시</th></tr></thead>
         <tbody>
           {reports?.map((r) => (
             <tr key={r.report_no}>
               <td>{r.report_no}</td><td>{r.target_type} #{r.target_no}</td><td>{r.reason_code}</td>
-              <td>{r.report_status}</td><td>{dt(r.reported_at)}</td>
+              <td><Status value={r.report_status} /></td><td>{dt(r.reported_at)}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
-      <h3>최근 로그인</h3>
+      <h3>
+        최근 로그인
+      </h3>
       <table>
         <thead><tr><th>일시</th><th>IP</th><th>결과</th><th>기기</th></tr></thead>
         <tbody>
@@ -84,7 +91,12 @@ export default function MePage() {
         </tbody>
       </table>
 
+      <h3>
+        회원 탈퇴
+      </h3>
+      <p className="muted">판매중이거나 예약중인 물건이 있으면 먼저 거래를 끝내거나 글을 삭제해야 해요.</p>
       <button
+        className="danger"
         onClick={() =>
           confirm("정말 탈퇴할까요?") &&
           act(() => api("/me/withdraw", { method: "POST" }), () => {

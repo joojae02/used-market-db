@@ -1,4 +1,7 @@
-"""상품 관리 (PRD-01 등록, PRD-02 수정/삭제, PRD-03 거래 상태) + 거래 (TRD-03 예약, TRD-04 완료)"""
+"""상품 관리 (PRD-01 등록, PRD-02 수정/삭제, PRD-04 거래 상태 변경) + 거래 (TRD-04 예약자 지정, TRD-05 거래 완료)
+
+단위업무 번호는 업무기능도 기준. ①② 문단 번호는 업무기술서 본문(괄호 안 번호)을 가리킨다.
+"""
 
 import uuid
 from pathlib import Path
@@ -199,7 +202,7 @@ def _require_chat_buyer(conn, product_no: int, buyer_no: int) -> None:
 
 @router.post("/{product_no}/reserve")
 def reserve(product_no: int, body: BuyerIn, member=Depends(current_member), conn=Depends(get_db)):
-    """TRD-03 예약자 지정 → 판매중 → 예약중"""
+    """TRD-04 예약자 지정 (기술서 TRD-03): 판매중 → 예약중"""
     p = _own_product(conn, product_no, member)
     if p["trade_status"] != "판매중":
         raise HTTPException(409, "판매중인 상품만 예약자를 지정할 수 있습니다.")
@@ -215,7 +218,7 @@ def reserve(product_no: int, body: BuyerIn, member=Depends(current_member), conn
 
 @router.post("/{product_no}/unreserve")
 def unreserve(product_no: int, member=Depends(current_member), conn=Depends(get_db)):
-    """TRD-03 ⑥⑦ 예약 해제 → 판매중"""
+    """TRD-04 예약 해제 (기술서 TRD-03 ⑥⑦): 예약중 → 판매중"""
     p = _own_product(conn, product_no, member)
     if p["trade_status"] != "예약중":
         raise HTTPException(409, "예약중인 상품이 아닙니다.")
@@ -230,7 +233,7 @@ def unreserve(product_no: int, member=Depends(current_member), conn=Depends(get_
 
 @router.post("/{product_no}/complete")
 def complete(product_no: int, body: BuyerIn, member=Depends(current_member), conn=Depends(get_db)):
-    """TRD-04 거래 완료 → 판매완료, 최종 구매자 외 채팅방 비활성"""
+    """TRD-05 거래 완료 (기술서 TRD-04): 판매완료, 최종 구매자 외 채팅방 비활성"""
     p = _own_product(conn, product_no, member)
     if p["trade_status"] == "판매완료":
         raise HTTPException(409, "이미 거래 완료된 상품입니다.")

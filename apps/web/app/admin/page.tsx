@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import Status from "@/components/Status";
 import { api, dt, won } from "@/lib/api";
 import { act, useLoad } from "@/lib/hooks";
 
@@ -12,10 +13,14 @@ export default function AdminPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("신고");
   return (
     <>
-      <h2>관리자</h2>
+      <div className="page-head">
+        <h1>운영 관리</h1>
+      </div>
       <div className="tabs">
         {TABS.map((t) => (
-          <button key={t} aria-pressed={tab === t} onClick={() => setTab(t)}>{t}</button>
+          <button key={t} aria-pressed={tab === t} onClick={() => setTab(t)}>
+            {t}
+          </button>
         ))}
       </div>
       {tab === "회원" && <Members />}
@@ -25,7 +30,7 @@ export default function AdminPage() {
   );
 }
 
-function SearchBar({ statuses, onSearch }: { statuses: string[]; onSearch: (q: string, s: string) => void }) {
+function SearchBar({ statuses, onSearch, placeholder }: { statuses: string[]; onSearch: (q: string, s: string) => void; placeholder?: string }) {
   return (
     <form
       className="row"
@@ -35,9 +40,9 @@ function SearchBar({ statuses, onSearch }: { statuses: string[]; onSearch: (q: s
         onSearch(String(f.get("q") ?? ""), String(f.get("s") ?? ""));
       }}
     >
-      <input name="q" placeholder="검색어 / 번호" />
-      <select name="s">
-        <option value="">전체</option>
+      {placeholder && <input name="q" placeholder={placeholder} aria-label="검색어" />}
+      <select name="s" aria-label="상태">
+        <option value="">모든 상태</option>
         {statuses.map((s) => <option key={s}>{s}</option>)}
       </select>
       <button>검색</button>
@@ -50,7 +55,7 @@ function Members() {
   const { data, error } = useLoad<Row[]>(query);
   return (
     <>
-      <SearchBar statuses={["정상", "이용정지", "탈퇴"]} onSearch={(q, s) => setQuery(`/admin/members?${new URLSearchParams({ q, status: s })}`)} />
+      <SearchBar placeholder="닉네임, 이름, 이메일 또는 회원번호" statuses={["정상", "이용정지", "탈퇴"]} onSearch={(q, s) => setQuery(`/admin/members?${new URLSearchParams({ q, status: s })}`)} />
       {error && <p className="error">{error}</p>}
       <table>
         <thead><tr><th>번호</th><th>닉네임</th><th>성명</th><th>이메일</th><th>권한</th><th>상태</th><th>가입</th></tr></thead>
@@ -59,7 +64,7 @@ function Members() {
             <tr key={m.member_no}>
               <td>{m.member_no}</td>
               <td><Link href={`/admin/members/${m.member_no}`}>{m.nickname}</Link></td>
-              <td>{m.name}</td><td>{m.email}</td><td>{m.role}</td><td>{m.account_status}</td><td>{dt(m.joined_at)}</td>
+              <td>{m.name}</td><td>{m.email}</td><td>{m.role}</td><td><Status value={m.account_status} /></td><td>{dt(m.joined_at)}</td>
             </tr>
           ))}
         </tbody>
@@ -77,7 +82,7 @@ function Products() {
   };
   return (
     <>
-      <SearchBar statuses={["정상", "블라인드", "삭제"]} onSearch={(q, s) => setQuery(`/admin/products?${new URLSearchParams({ q, post_status: s })}`)} />
+      <SearchBar placeholder="상품명, 상품번호 또는 판매자 회원번호" statuses={["정상", "블라인드", "삭제"]} onSearch={(q, s) => setQuery(`/admin/products?${new URLSearchParams({ q, post_status: s })}`)} />
       {error && <p className="error">{error}</p>}
       <table>
         <thead><tr><th>번호</th><th>상품</th><th>판매자</th><th>가격</th><th>거래</th><th>게시글</th><th>신고</th><th>조치</th></tr></thead>
@@ -87,11 +92,11 @@ function Products() {
               <td>{p.product_no}</td>
               <td><Link href={`/products/${p.product_no}`}>{p.title}</Link></td>
               <td><Link href={`/admin/members/${p.seller_no}`}>{p.seller_nickname}</Link></td>
-              <td>{won(p.price)}</td><td>{p.trade_status}</td><td>{p.post_status}</td><td>{p.report_count}</td>
+              <td>{won(p.price)}</td><td><Status value={p.trade_status} /></td><td><Status value={p.post_status} /></td><td>{p.report_count}</td>
               <td className="row">
                 {p.post_status === "정상" && <button onClick={() => action(p.product_no, "블라인드")}>블라인드</button>}
                 {p.post_status === "블라인드" && <button onClick={() => action(p.product_no, "블라인드해제")}>해제</button>}
-                {p.post_status !== "삭제" && <button onClick={() => action(p.product_no, "삭제")}>삭제</button>}
+                {p.post_status !== "삭제" && <button className="danger" onClick={() => action(p.product_no, "삭제")}>삭제</button>}
               </td>
             </tr>
           ))}
@@ -115,7 +120,7 @@ function Reports() {
             <tr key={r.report_no}>
               <td><Link href={`/admin/reports/${r.report_no}`}>#{r.report_no}</Link></td>
               <td>{r.target_type} #{r.target_member_no ?? r.target_product_no}</td>
-              <td>{r.reason_code}</td><td>{r.reporter_nickname}</td><td>{r.report_status}</td><td>{dt(r.reported_at)}</td>
+              <td>{r.reason_code}</td><td>{r.reporter_nickname}</td><td><Status value={r.report_status} /></td><td>{dt(r.reported_at)}</td>
             </tr>
           ))}
         </tbody>

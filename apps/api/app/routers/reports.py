@@ -1,4 +1,4 @@
-"""신고 (TRS-01)"""
+"""신고 (TRS-03, 기술서 TRS-01)"""
 
 from typing import Literal
 
@@ -28,7 +28,7 @@ def reasons():
 
 @router.post("", status_code=201)
 def create_report(body: ReportIn, member=Depends(current_member), conn=Depends(get_db)):
-    # TRS-01 ⑧ 실제 존재하는 대상만
+    # 기술서 TRS-01 ⑧ 실제 존재하는 대상만
     if body.target_type == "회원":
         exists = fetch_one(conn, "SELECT 1 FROM member WHERE member_no=%s", (body.target_no,))
         if body.target_no == member["member_no"]:
@@ -48,13 +48,13 @@ def create_report(body: ReportIn, member=Depends(current_member), conn=Depends(g
             (member["member_no"], body.target_type, member_no, product_no, body.reason_code, body.content),
         )
     except pymysql.err.IntegrityError:
-        raise HTTPException(409, "이미 신고한 대상입니다.")  # TRS-01 ⑦ (uk_report_once)
+        raise HTTPException(409, "이미 신고한 대상입니다.")  # 기술서 TRS-01 ⑦ (uk_report_once)
     return {"report_no": report_no}
 
 
 @router.get("/mine")
 def my_reports(member=Depends(current_member), conn=Depends(get_db)):
-    """TRS-01 ⑪ 내가 한 신고의 처리 상태"""
+    """기술서 TRS-01 ⑪ 내가 한 신고의 처리 상태"""
     return fetch_all(
         conn,
         """SELECT report_no, target_type, COALESCE(target_member_no, target_product_no) AS target_no,

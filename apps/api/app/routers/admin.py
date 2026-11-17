@@ -1,4 +1,4 @@
-"""운영 관리 (ADM-01 회원 관리/제재, ADM-02 게시글 관리, ADM-03 신고 관리) + 권한 관리(root)"""
+"""운영 관리 (ADM-01 회원 관리/제재, ADM-02 게시글 관리, ADM-03 신고 처리) + 권한 관리(root)"""
 
 from datetime import datetime
 from typing import Literal
