@@ -2,6 +2,8 @@
 
 기능 위주 데모. 디자인은 최소한.
 
+<img width="1440" height="675" alt="중고마켓 화면" src="https://github.com/user-attachments/assets/9cf178b5-e26b-4d8d-8843-de85c03c2af3" />
+
 ```
 apps/
   api/   FastAPI + PyMySQL (ORM 없이 SQL 직접 작성)
@@ -9,7 +11,7 @@ apps/
 db/
   schema.sql   물리 설계 DDL (MySQL 8, 트리거·CHECK 포함)
 docs/
-  문서-불일치-정리.md   업무기술서·흐름도·ERD·DDL 간 차이
+  문서-불일치-정리.md   산출물 간 불일치, 미구현 항목, 코드의 임시 해석
 ```
 
 ## 실행
@@ -19,10 +21,10 @@ docs/
 ```bash
 pnpm install
 
-# DB 생성 + 데모 데이터 (로컬 MySQL)
+# DB 생성 + 샘플 데이터 (로컬 MySQL)
 pnpm db:init
-# docker 를 쓰면 스키마는 자동 실행되므로 시드만
-pnpm db:seed
+# docker 를 쓰면 스키마는 자동 실행되므로 샘플 데이터만
+pnpm db:sample
 
 # 터미널 두 개에서
 pnpm dev:api   # http://localhost:8000  (API 문서: /docs)
@@ -35,19 +37,23 @@ DB 접속 정보가 기본값(root, 비밀번호 없음, 3306)과 다르면 환�
 DB_PASSWORD=secret pnpm dev:api
 ```
 
-데모 계정 (비밀번호 모두 `1234`)
+샘플 데이터 계정 (`db/sample_data.sql`, 비밀번호는 `db:sample`이 모두 `1234`로 맞춘다)
 
-| 닉네임 | 권한 | 용도 |
+| 닉네임 | 권한 | 상태 |
 | --- | --- | --- |
-| root | root | 권한 변경 포함 모든 관리 |
-| mod | moderator | 신고·제재·게시글 조치 |
-| seller | user | 상품 2개 등록됨 |
-| buyer | user | seller 상품에 채팅 중 |
-| buyer2 | user | 상품 신고 1건 |
+| 슈퍼루트 | root | 권한 변경을 포함한 모든 관리 |
+| 운영자 | staff | 신고·제재·게시글 조치 |
+| 판매왕 | user | 상품 1(판매중), 2(예약중) 판매 |
+| 구매왕 | user | 상품 1·2 판매자와 채팅 중 |
+| 학생이 | user | 상품 3(판매완료), 4 판매 |
+| 사용자5 | user | 일시정지 (2026-11-17 종료) |
+| 탈퇴회원 | user | 탈퇴, 로그인 불가 |
+
+`pnpm db:seed`는 샘플 데이터 대신 쓸 수 있는 최소 시드(root, mod, seller, buyer, buyer2)를 넣는다. 둘 중 하나만 쓴다.
 
 ## 단위업무 ↔ 구현
 
-번호는 업무기능도 기준. 업무기술서 제목·업무흐름도는 번호가 다르다 (`docs/문서-불일치-정리.md` 0-1).
+번호는 업무기능도 기준. 업무기술서 제목·업무흐름도는 번호가 다르다 (`docs/문서-불일치-정리.md` 1-1).
 
 | 업무 (기능도) | 기술서 | API | 화면 |
 | --- | --- | --- | --- |
@@ -64,4 +70,4 @@ DB_PASSWORD=secret pnpm dev:api
 | ADM-03 신고 처리 | ADM-03 | `/admin/reports/*` | `/admin` → 신고 |
 | (문서 없음) 권한 관리 | — | `PATCH /admin/members/{no}/role` (root만) | 관리자 회원 상세 |
 
-문서가 정하지 않은 규칙은 `docs/문서-불일치-정리.md` 7절의 임시 해석을 따른다.
+문서가 정하지 않은 규칙은 `docs/문서-불일치-정리.md` 7장의 임시 해석을 따르고, 아직 구현하지 않은 항목은 6장에 있다.
