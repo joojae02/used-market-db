@@ -1,0 +1,17 @@
+[project]
+name = "used-market-api"
+version = "0.1.0"
+description = "중고거래 플랫폼 데모 API"
+authors = [
+    { name = "joojae02", email = "jake010417@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "cryptography>=50.0.2",
+    "email-validator>=2.4.0",
+    "fastapi>=0.163.1",
+    "itsdangerous>=2.2.0",
+    "pymysql>=1.2.4",
+    "python-multipart>=0.0.34",
+    "uvicorn[standard]>=0.54.0",
+]

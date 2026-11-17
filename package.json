@@ -1,0 +1,13 @@
+{
+  "name": "used-market",
+  "private": true,
+  "scripts": {
+    "db:init": "mysql -u root -p < db/schema.sql && pnpm db:sample",
+    "db:seed": "cd apps/api && uv run python -m scripts.seed",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "db:sample": "mysql -u root -p < db/sample_data.sql && cd apps/api && uv run python -m scripts.demo_passwords"
+  },
+  "packageManager": "pnpm@11.0.9"
+}
