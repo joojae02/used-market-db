@@ -1,8 +1,13 @@
 import os
 from collections.abc import Iterator
+from pathlib import Path
 
 import pymysql
+from dotenv import load_dotenv
 from pymysql.cursors import DictCursor
+
+# apps/api/.env 가 있으면 읽는다 (이미 설정된 환경변수가 우선)
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 DB_CONFIG = dict(
     host=os.getenv("DB_HOST", "127.0.0.1"),

@@ -14,30 +14,108 @@ docs/
   문서-불일치-정리.md   산출물 간 불일치, 미구현 항목, 코드의 임시 해석
 ```
 
-## 실행
+## 실행 튜토리얼
 
-준비물: Node 22+, pnpm, [uv](https://docs.astral.sh/uv/), MySQL 8 (로컬 또는 `docker compose up -d`)
+처음 받은 사람이 로컬에서 화면을 띄우기까지의 순서다. 명령어는 모두 레포 최상위 폴더에서 실행한다.
+
+### 1. 준비물 설치
+
+| 도구 | 버전 | 확인 명령 | 설치 |
+| --- | --- | --- | --- |
+| Node.js | 22 이상 | `node -v` | [nodejs.org](https://nodejs.org) |
+| pnpm | 10 이상 | `pnpm -v` | `npm install -g pnpm` |
+| uv (Python 관리) | 최신 | `uv --version` | [설치 안내](https://docs.astral.sh/uv/getting-started/installation/) |
+| MySQL 8 **또는** Docker | MySQL 8.0.16 이상 | `mysql --version` / `docker -v` | [MySQL](https://dev.mysql.com/downloads/mysql/) / [Docker Desktop](https://www.docker.com/products/docker-desktop/) |
+
+Python은 따로 설치하지 않아도 된다. uv가 필요한 버전(3.12)을 알아서 받는다.
+macOS라면 `brew install node pnpm uv mysql` 한 줄로 끝난다.
+
+### 2. 코드 받기와 의존성 설치
 
 ```bash
+git clone https://github.com/joojae02/used-market-db.git
+cd used-market-db
 pnpm install
-
-# DB 생성 + 샘플 데이터 (로컬 MySQL)
-pnpm db:init
-# docker 를 쓰면 스키마는 자동 실행되므로 샘플 데이터만
-pnpm db:sample
-
-# 터미널 두 개에서
-pnpm dev:api   # http://localhost:8000  (API 문서: /docs)
-pnpm dev:web   # http://localhost:3000
 ```
 
-DB 접속 정보가 기본값(root, 비밀번호 없음, 3306)과 다르면 환경변수로 넘긴다. `apps/api/.env.example` 참고.
+### 3. 접속 정보 설정 (root 비밀번호가 있을 때만)
+
+MySQL root 비밀번호가 비어 있거나 Docker를 쓴다면 이 단계는 건너뛴다. 비밀번호가 있거나 포트가 3306이 아니면, 예시 파일을 복사해 값을 고친다.
 
 ```bash
-DB_PASSWORD=secret pnpm dev:api
+cp apps/api/.env.example apps/api/.env
 ```
 
-샘플 데이터 계정 (`db/sample_data.sql`, 비밀번호는 `db:sample`이 모두 `1234`로 맞춘다)
+```ini
+# apps/api/.env
+DB_PASSWORD=내_root_비밀번호
+DB_PORT=3306
+```
+
+`.env`는 git에 올라가지 않는다. API 서버와 다음 단계의 비밀번호 설정 스크립트가 이 파일을 읽는다.
+
+### 4. 데이터베이스 준비
+
+둘 중 하나를 고른다.
+
+**방법 A. 내 컴퓨터의 MySQL을 쓰는 경우**
+
+```bash
+# MySQL 서버 켜기 (macOS brew 기준. Windows는 설치 시 서비스로 자동 실행됨)
+brew services start mysql
+
+# 테이블 생성 → 샘플 데이터 → 샘플 계정 비밀번호를 1234로 설정
+pnpm db:init
+```
+
+`Enter password:`가 두 번 나온다. MySQL root 비밀번호를 입력하고, 비밀번호가 없으면 그냥 Enter를 누른다.
+
+**방법 B. Docker를 쓰는 경우**
+
+```bash
+# MySQL 컨테이너 실행. 처음 뜰 때 db/schema.sql이 자동으로 들어간다 (30초 정도 걸림)
+docker compose up -d
+
+# 샘플 데이터 넣기 + 비밀번호 설정
+docker compose exec -T mysql mysql -uroot used_market < db/sample_data.sql
+pnpm db:passwords
+```
+
+컨테이너 안에서 직접 SQL을 칠 때는 한글이 깨지지 않게 문자셋을 지정한다.
+
+```bash
+docker compose exec mysql mysql -uroot --default-character-set=utf8mb4 used_market
+```
+
+### 5. 서버 실행
+
+터미널을 두 개 열고 각각 실행한다.
+
+```bash
+# 터미널 1: API 서버
+pnpm dev:api
+```
+
+```bash
+# 터미널 2: 웹
+pnpm dev:web
+```
+
+| 주소 | 내용 |
+| --- | --- |
+| http://localhost:3000 | 웹 화면 |
+| http://localhost:8000/docs | API 문서 (요청을 직접 보내볼 수 있음) |
+
+### 6. 동작 확인
+
+1. http://localhost:3000 에 들어가면 상품 5개가 보인다.
+2. 오른쪽 위 **로그인**에서 `판매왕` / `1234`로 로그인한다.
+3. 아이패드 상품을 열면 "채팅한 구매자" 목록에서 예약자 지정과 거래 완료를 할 수 있다.
+4. `운영자` / `1234`로 로그인하면 상단에 **운영 관리** 메뉴가 생긴다.
+
+### 샘플 계정
+
+`db/sample_data.sql`에 들어 있는 계정이다. 비밀번호는 `pnpm db:passwords`가 모두 `1234`로 맞춘다.
 
 | 닉네임 | 권한 | 상태 |
 | --- | --- | --- |
@@ -50,6 +128,23 @@ DB_PASSWORD=secret pnpm dev:api
 | 탈퇴회원 | user | 탈퇴, 로그인 불가 |
 
 `pnpm db:seed`는 샘플 데이터 대신 쓸 수 있는 최소 시드(root, mod, seller, buyer, buyer2)를 넣는다. 둘 중 하나만 쓴다.
+
+### 처음부터 다시 하고 싶을 때
+
+`pnpm db:init`을 다시 실행하면 테이블을 지우고 샘플 데이터 상태로 돌아간다. Docker라면 `docker compose down -v` 후 4단계부터 다시 한다.
+
+### 자주 막히는 문제
+
+| 증상 | 원인과 해결 |
+| --- | --- |
+| `Can't connect to MySQL server on '127.0.0.1'` | MySQL이 꺼져 있다. 4단계의 서버 켜기 명령이나 `docker compose up -d`를 실행한다 |
+| `Access denied for user 'root'` | root 비밀번호가 있다. 3단계대로 `apps/api/.env`에 `DB_PASSWORD`를 넣는다 |
+| 로그인하면 "닉네임 또는 패스워드가 일치하지 않습니다" | 샘플 데이터의 비밀번호는 예시 문자열이다. `pnpm db:passwords`를 실행한다 |
+| 로그인하면 "5회 실패로 … 제한됩니다" | 10분을 기다리거나 `pnpm db:init`으로 초기화한다 |
+| 화면에 "Failed to fetch" 또는 아무 상품도 안 보임 | API 서버(터미널 1)가 꺼져 있다 |
+| `EADDRINUSE` / `address already in use` | 3000이나 8000 포트를 다른 프로그램이 쓰고 있다. 그 프로그램을 끈다 |
+| `docker compose up` 에서 `port is already allocated` | 내 컴퓨터의 MySQL이 3306을 쓰고 있다. 로컬 MySQL을 끄거나 방법 A를 쓴다 |
+| 상품 사진이 "사진 없음"으로 나옴 | 정상이다. 샘플 데이터의 이미지 경로에 실제 파일이 없다. 새로 등록한 상품의 사진은 보인다 |
 
 ## 단위업무 ↔ 구현
 

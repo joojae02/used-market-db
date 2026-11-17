@@ -582,6 +582,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "itsdangerous" },
     { name = "pymysql" },
+    { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -592,6 +593,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.163.1" },
     { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "pymysql", specifier = ">=1.2.4" },
+    { name = "python-dotenv", specifier = ">=1.2.4" },
     { name = "python-multipart", specifier = ">=0.0.34" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.54.0" },
 ]
