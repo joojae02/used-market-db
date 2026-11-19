@@ -7,8 +7,9 @@ import pymysql
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..auth import admin_member
+from ..auth import ADMIN_ROLES, admin_member
 from ..db import execute, fetch_all, fetch_one, get_db
+from .products import close_other_chats
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -42,6 +43,25 @@ class ProcessIn(BaseModel):
 def _db_error(e: pymysql.err.MySQLError) -> HTTPException:
     """트리거(SIGNAL 45000) 메시지를 그대로 돌려준다."""
     return HTTPException(409, e.args[1] if len(e.args) > 1 else str(e))
+
+
+def _check_related_report(conn, report_no: int | None, member_no: int | None = None, product_no: int | None = None) -> None:
+    """관련신고번호가 실제로 이 회원(또는 그 회원의 게시글) / 이 게시글에 대한 신고인지 확인"""
+    if report_no is None:
+        return
+    r = fetch_one(
+        conn,
+        """SELECT r.target_member_no, r.target_product_no, p.seller_no
+             FROM report r LEFT JOIN product p ON p.product_no=r.target_product_no
+            WHERE r.report_no=%s""",
+        (report_no,),
+    )
+    if r is None:
+        raise HTTPException(404, "관련 신고가 없습니다.")
+    if member_no is not None and member_no not in (r["target_member_no"], r["seller_no"]):
+        raise HTTPException(422, f"신고 #{report_no}은(는) 이 회원에 대한 신고가 아닙니다.")
+    if product_no is not None and r["target_product_no"] != product_no:
+        raise HTTPException(422, f"신고 #{report_no}은(는) 이 게시글에 대한 신고가 아닙니다.")
 
 
 # ---------------------------------------------------------------- ADM-01 회원
@@ -104,13 +124,35 @@ def member_detail(member_no: int, conn=Depends(get_db), _=Depends(admin_member))
 
 @router.post("/members/{member_no}/sanctions", status_code=201)
 def sanction(member_no: int, body: SanctionIn, conn=Depends(get_db), admin=Depends(admin_member)):
-    if body.sanction_type == "일시정지" and body.end_at is None:
-        raise HTTPException(422, "일시정지는 종료예정일시가 필요합니다.")
-    target = fetch_one(conn, "SELECT account_status FROM member WHERE member_no=%s", (member_no,))
+    if body.sanction_type == "일시정지":
+        if body.end_at is None:
+            raise HTTPException(422, "일시정지는 종료예정일시가 필요합니다.")
+        if body.end_at <= datetime.now():
+            raise HTTPException(422, "종료예정일시는 현재 이후여야 합니다.")
+    if member_no == admin["member_no"]:
+        raise HTTPException(400, "자기 자신은 제재할 수 없습니다.")
+    target = fetch_one(conn, "SELECT role, account_status FROM member WHERE member_no=%s FOR UPDATE", (member_no,))
     if target is None:
         raise HTTPException(404, "회원이 없습니다.")
     if target["account_status"] == "탈퇴":
         raise HTTPException(409, "탈퇴한 회원입니다.")
+    if target["role"] in ADMIN_ROLES and admin["role"] != "root":
+        raise HTTPException(403, "관리자 계정의 제재는 루트만 할 수 있습니다.")
+    _check_related_report(conn, body.report_no, member_no=member_no)
+    # ADM-01 ⑫ 중복 제재 방지: 유효한 정지가 있으면 같은 정지를 또 걸 수 없다 (일시정지 → 영구정지 격상만 허용)
+    if body.sanction_type != "경고":
+        active = fetch_one(
+            conn,
+            """SELECT sanction_no, sanction_type FROM member_sanction
+                WHERE member_no=%s AND released_at IS NULL AND sanction_type IN ('일시정지','영구정지')
+                  AND (end_at IS NULL OR end_at > NOW())
+                ORDER BY sanction_type='영구정지' DESC LIMIT 1""",
+            (member_no,),
+        )
+        if active and not (active["sanction_type"] == "일시정지" and body.sanction_type == "영구정지"):
+            raise HTTPException(
+                409, f"이미 유효한 {active['sanction_type']}(제재 #{active['sanction_no']})가 있습니다. 해제 후 다시 제재하세요."
+            )
     try:
         sanction_no = execute(
             conn,
@@ -200,12 +242,13 @@ def product_actions(product_no: int, conn=Depends(get_db), _=Depends(admin_membe
 
 @router.post("/products/{product_no}/actions", status_code=201)
 def product_action(product_no: int, body: ActionIn, conn=Depends(get_db), admin=Depends(admin_member)):
-    p = fetch_one(conn, "SELECT post_status FROM product WHERE product_no=%s FOR UPDATE", (product_no,))
+    p = fetch_one(conn, "SELECT post_status, buyer_no FROM product WHERE product_no=%s FOR UPDATE", (product_no,))
     if p is None:
         raise HTTPException(404, "상품이 없습니다.")
     allowed = {"블라인드": ("정상",), "삭제": ("정상", "블라인드"), "블라인드해제": ("블라인드",)}
     if p["post_status"] not in allowed[body.action_type]:
         raise HTTPException(409, f"'{p['post_status']}' 상태에서는 {body.action_type} 할 수 없습니다.")
+    _check_related_report(conn, body.report_no, product_no=product_no)
     try:
         action_no = execute(
             conn,
@@ -217,6 +260,7 @@ def product_action(product_no: int, body: ActionIn, conn=Depends(get_db), admin=
         raise _db_error(e)
     if body.action_type == "삭제":
         execute(conn, "UPDATE product SET post_status='삭제', deleted_at=NOW() WHERE product_no=%s", (product_no,))
+        close_other_chats(conn, product_no, p["buyer_no"])
     else:
         new_status = "블라인드" if body.action_type == "블라인드" else "정상"
         execute(conn, "UPDATE product SET post_status=%s WHERE product_no=%s", (new_status, product_no))

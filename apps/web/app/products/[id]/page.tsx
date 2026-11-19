@@ -12,6 +12,7 @@ import { act, useLoad, useSession } from "@/lib/hooks";
 type Product = {
   product_no: number;
   seller_no: number;
+  reserver_no: number | null;
   seller_nickname: string;
   reserver_nickname: string | null;
   buyer_nickname: string | null;
@@ -136,6 +137,9 @@ export default function ProductPage() {
           <h3>
             채팅한 구매자
           </h3>
+          {p.trade_status === "예약중" && (
+            <p className="muted">예약중에는 예약자와만 거래를 완료할 수 있어요. 다른 사람과 거래하려면 먼저 예약을 해제하세요.</p>
+          )}
           {buyers?.length === 0 ? (
             <p className="muted">아직 채팅한 구매자가 없어요. 채팅한 사람 중에서 예약자와 구매자를 고를 수 있어요.</p>
           ) : (
@@ -154,7 +158,7 @@ export default function ProductPage() {
                           {p.trade_status === "판매중" && (
                             <button onClick={() => post("/reserve", { buyer_no: b.buyer_no })}>예약자로 지정</button>
                           )}
-                          {p.trade_status !== "판매완료" && (
+                          {(p.trade_status === "판매중" || (p.trade_status === "예약중" && b.buyer_no === p.reserver_no)) && (
                             <button
                               className="primary"
                               onClick={() => confirm(`${b.buyer_nickname}님과 거래를 완료할까요?`) && post("/complete", { buyer_no: b.buyer_no })}

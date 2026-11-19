@@ -1,5 +1,6 @@
 """회원 관리 (MEM-01 회원가입/탈퇴, MEM-02 로그인/로그아웃)"""
 
+import re
 from datetime import date, datetime, timedelta
 
 import pymysql
@@ -13,12 +14,14 @@ router = APIRouter(tags=["members"])
 
 MAX_LOGIN_FAIL = 5  # MEM-02 ⑦
 LOCK_MINUTES = 10
+PHONE_PATTERN = r"^01[0-9]-?\d{3,4}-?\d{4}$"
+PHONE_RE = re.compile(PHONE_PATTERN)
 
 
 class SignupIn(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     nickname: str = Field(min_length=2, max_length=30)
-    phone: str = Field(pattern=r"^01[0-9]-?\d{3,4}-?\d{4}$")
+    phone: str = Field(pattern=PHONE_PATTERN)
     birth_date: date | None = None
     address: str | None = Field(None, max_length=200)
     # EmailStr 은 sample_data 의 @market.test 같은 예약 도메인을 거부해서 형식만 확인
@@ -55,6 +58,8 @@ def check_duplicate(nickname: str | None = None, email: str | None = None, phone
             conn, "SELECT 1 FROM member WHERE email=%s AND account_status<>'탈퇴'", (email,)
         )
     if phone:
+        if not PHONE_RE.fullmatch(phone):
+            raise HTTPException(422, "전화번호 형식이 올바르지 않습니다. 예: 010-1234-5678")
         result["phone"] = not fetch_one(conn, "SELECT 1 FROM member WHERE phone=%s", (_normalize_phone(phone),))
     return result
 
@@ -193,6 +198,19 @@ def withdraw(member=Depends(current_member), conn=Depends(get_db)):
     )
     if selling["cnt"]:
         raise HTTPException(409, f"판매중/예약중 상품 {selling['cnt']}개를 먼저 거래 완료하거나 삭제하세요.")
+    # 내가 예약자로 잡혀 있던 남의 상품은 예약을 풀어 판매중으로 되돌린다 (탈퇴자가 예약을 붙잡고 있지 않도록)
+    execute(
+        conn,
+        """UPDATE product SET trade_status='판매중', reserver_no=NULL, trade_status_at=NOW()
+            WHERE reserver_no=%s AND trade_status='예약중'""",
+        (member["member_no"],),
+    )
+    # 탈퇴자와의 채팅방은 더 이상 메시지를 주고받을 수 없다
+    execute(
+        conn,
+        "UPDATE chat_room SET room_status='비활성' WHERE %s IN (seller_no, buyer_no)",
+        (member["member_no"],),
+    )
     execute(
         conn,
         "UPDATE member SET account_status='탈퇴', withdrawn_at=NOW() WHERE member_no=%s",

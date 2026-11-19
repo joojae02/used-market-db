@@ -24,7 +24,7 @@ export default function SignupPage() {
 
   const hint = (k: Field) =>
     checked[k] === undefined ? null : (
-      <small className={checked[k] ? undefined : "error"}>{checked[k] ? "사용할 수 있어요" : `이미 사용 중인 ${LABELS[k]}이에요`}</small>
+      <small className={checked[k] ? undefined : "error"}>{checked[k] ? "사용할 수 있어요" : `이미 사용 중인 ${LABELS[k]}${k === "phone" ? "예요" : "이에요"}`}</small>
     );
 
   return (
@@ -63,7 +63,21 @@ export default function SignupPage() {
         </label>
         <label className="field">
           전화번호
-          <input name="phone" type="tel" placeholder="010-0000-0000" autoComplete="tel" required />
+          <input
+            name="phone"
+            type="tel"
+            placeholder="010-0000-0000"
+            autoComplete="tel"
+            pattern="01[0-9]-?[0-9]{3,4}-?[0-9]{4}"
+            title="010-1234-5678 형식으로 입력하세요"
+            onInvalid={(e) =>
+              e.currentTarget.setCustomValidity(
+                e.currentTarget.validity.patternMismatch ? "전화번호 형식이 올바르지 않아요. 예: 010-1234-5678" : "",
+              )
+            }
+            onInput={(e) => e.currentTarget.setCustomValidity("")}
+            required
+          />
           {hint("phone")}
         </label>
         <label className="field">
