@@ -17,16 +17,23 @@ router = APIRouter(prefix="/products", tags=["products"])
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 CONDITIONS = ("새상품", "거의새것", "사용감있음", "하자있음")
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+MAX_PRICE = 4_294_967_295  # price INT UNSIGNED 최댓값
 
 
 class BuyerIn(BaseModel):
     buyer_no: int
 
 
+def _check_images(files: list[UploadFile]) -> None:
+    # 업로드 폴더는 그대로 웹에 노출되므로 이미지 확장자만 받는다 (.html 등 차단)
+    for f in files:
+        if f.filename and Path(f.filename).suffix.lower() not in IMAGE_EXTS:
+            raise HTTPException(422, f"이미지 파일만 올릴 수 있습니다. ({', '.join(IMAGE_EXTS)})")
+
+
 def _save_images(conn, product_no: int, files: list[UploadFile]) -> None:
-    for order, f in enumerate(files):
-        if not f.filename:
-            continue
+    for order, f in enumerate(f for f in files if f.filename):
         name = f"{uuid.uuid4().hex}{Path(f.filename).suffix.lower()}"
         (UPLOAD_DIR / name).write_bytes(f.file.read())
         execute(
@@ -39,8 +46,10 @@ def _save_images(conn, product_no: int, files: list[UploadFile]) -> None:
 def _validate(title: str, price: int, item_condition: str) -> None:
     if not title.strip():
         raise HTTPException(422, "상품명을 입력하세요.")
-    if price < 0:
-        raise HTTPException(422, "판매가격은 0원 이상이어야 합니다.")
+    if len(title) > 100:
+        raise HTTPException(422, "상품명은 100자 이하여야 합니다.")
+    if not 0 <= price <= MAX_PRICE:
+        raise HTTPException(422, "판매가격은 0원 이상, 약 42억 원 이하여야 합니다.")
     if item_condition not in CONDITIONS:
         raise HTTPException(422, f"물품상태는 {CONDITIONS} 중 하나여야 합니다.")
 
@@ -63,15 +72,25 @@ def _own_product(conn, product_no: int, member: dict) -> dict:
     return p
 
 
+def close_other_chats(conn, product_no: int, keep_buyer_no: int | None) -> None:
+    """최종 구매자(keep_buyer_no) 방만 남기고 그 상품의 채팅방을 비활성으로."""
+    execute(
+        conn,
+        "UPDATE chat_room SET room_status='비활성' WHERE product_no=%s AND NOT (buyer_no <=> %s)",
+        (product_no, keep_buyer_no),
+    )
+
+
 @router.get("")
 def list_products(q: str | None = None, trade_status: str | None = None, conn=Depends(get_db)):
     # PRD-02 ⑧ / ADM-02 ⑦ 삭제·블라인드 게시글은 목록에서 제외
+    # 이용정지·탈퇴 판매자의 글도 제외 (채팅을 열 수 없는 상품이 목록에 남지 않도록)
     sql = """SELECT p.product_no, p.title, p.price, p.trade_status, p.trade_area, p.registered_at,
                     m.nickname AS seller_nickname,
                     (SELECT image_path FROM product_image i
                       WHERE i.product_no=p.product_no ORDER BY image_order LIMIT 1) AS thumbnail
                FROM product p JOIN member m ON m.member_no = p.seller_no
-              WHERE p.post_status='정상'"""
+              WHERE p.post_status='정상' AND m.account_status='정상'"""
     params: list = []
     if q:
         sql += " AND (p.title LIKE %s OR p.description LIKE %s)"
@@ -142,6 +161,7 @@ def create_product(
     conn=Depends(get_db),
 ):
     _validate(title, price, item_condition)
+    _check_images(images)
     product_no = execute(
         conn,
         """INSERT INTO product (seller_no, title, description, price, item_condition, trade_area, price_offer_yn)
@@ -169,6 +189,7 @@ def update_product(
     if p["trade_status"] == "판매완료":  # PRD-02 ⑤
         raise HTTPException(409, "판매완료 상품은 수정할 수 없습니다.")
     _validate(title, price, item_condition)
+    _check_images(images)
     execute(
         conn,
         """UPDATE product SET title=%s, description=%s, price=%s, item_condition=%s,
@@ -189,15 +210,20 @@ def delete_product(product_no: int, member=Depends(current_member), conn=Depends
     execute(
         conn, "UPDATE product SET post_status='삭제', deleted_at=NOW() WHERE product_no=%s", (product_no,)
     )
+    close_other_chats(conn, product_no, p["buyer_no"])  # 판매완료 글이면 최종 구매자 방은 유지
     return {"ok": True}
 
 
-def _require_chat_buyer(conn, product_no: int, buyer_no: int) -> None:
-    room = fetch_one(
-        conn, "SELECT 1 FROM chat_room WHERE product_no=%s AND buyer_no=%s", (product_no, buyer_no)
+def _require_chat_buyer(conn, product_no: int, buyer_no: int) -> dict:
+    row = fetch_one(
+        conn,
+        """SELECT m.account_status FROM chat_room r JOIN member m ON m.member_no=r.buyer_no
+            WHERE r.product_no=%s AND r.buyer_no=%s""",
+        (product_no, buyer_no),
     )
-    if room is None:
+    if row is None:
         raise HTTPException(422, "해당 상품 채팅방에 참여한 구매자만 지정할 수 있습니다.")
+    return row
 
 
 @router.post("/{product_no}/reserve")
@@ -206,7 +232,9 @@ def reserve(product_no: int, body: BuyerIn, member=Depends(current_member), conn
     p = _own_product(conn, product_no, member)
     if p["trade_status"] != "판매중":
         raise HTTPException(409, "판매중인 상품만 예약자를 지정할 수 있습니다.")
-    _require_chat_buyer(conn, product_no, body.buyer_no)
+    buyer = _require_chat_buyer(conn, product_no, body.buyer_no)
+    if buyer["account_status"] != "정상":
+        raise HTTPException(409, f"구매자 계정이 '{buyer['account_status']}' 상태라 예약자로 지정할 수 없습니다.")
     execute(
         conn,
         """UPDATE product SET trade_status='예약중', reserver_no=%s, trade_status_at=NOW()
@@ -237,6 +265,9 @@ def complete(product_no: int, body: BuyerIn, member=Depends(current_member), con
     p = _own_product(conn, product_no, member)
     if p["trade_status"] == "판매완료":
         raise HTTPException(409, "이미 거래 완료된 상품입니다.")
+    # 기술서 TRD-04 ④ 예약중이면 예약자와만 완료. 다른 사람과 거래하려면 예약을 먼저 해제한다.
+    if p["trade_status"] == "예약중" and body.buyer_no != p["reserver_no"]:
+        raise HTTPException(409, "예약중인 상품은 예약자와만 거래를 완료할 수 있습니다. 다른 구매자와 거래하려면 예약을 먼저 해제하세요.")
     _require_chat_buyer(conn, product_no, body.buyer_no)
     execute(
         conn,
@@ -244,9 +275,5 @@ def complete(product_no: int, body: BuyerIn, member=Depends(current_member), con
                   completed_at=NOW(), trade_status_at=NOW() WHERE product_no=%s""",
         (body.buyer_no, product_no),
     )
-    execute(
-        conn,
-        "UPDATE chat_room SET room_status='비활성' WHERE product_no=%s AND buyer_no<>%s",
-        (product_no, body.buyer_no),
-    )
+    close_other_chats(conn, product_no, body.buyer_no)
     return {"ok": True}

@@ -34,7 +34,9 @@ def create_report(body: ReportIn, member=Depends(current_member), conn=Depends(g
         if body.target_no == member["member_no"]:
             raise HTTPException(400, "자기 자신은 신고할 수 없습니다.")
     else:
-        exists = fetch_one(conn, "SELECT 1 FROM product WHERE product_no=%s", (body.target_no,))
+        exists = fetch_one(conn, "SELECT seller_no FROM product WHERE product_no=%s", (body.target_no,))
+        if exists and exists["seller_no"] == member["member_no"]:
+            raise HTTPException(400, "본인이 올린 게시글은 신고할 수 없습니다.")
     if not exists:
         raise HTTPException(404, "신고 대상이 없습니다.")
 

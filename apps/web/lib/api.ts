@@ -16,6 +16,18 @@ export function setSession(s: Session | null) {
 
 export const isAdmin = (s: Session | null) => !!s && ["moderator", "staff", "root"].includes(s.member.role);
 
+/** 서버가 보낸 detail 을 사람이 읽을 문장으로. 객체·배열을 JSON 그대로 띄우지 않는다. */
+function errorMessage(detail: unknown, status: number): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail.map((d) => (typeof d === "string" ? d : d?.msg)).filter(Boolean);
+    if (msgs.length) return msgs.join("\n");
+  }
+  if (status === 422) return "입력값을 다시 확인하세요.";
+  if (status >= 500) return "서버 오류가 발생했어요. 잠시 후 다시 시도하세요.";
+  return `요청을 처리하지 못했어요. (${status})`;
+}
+
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getSession()?.token;
@@ -30,8 +42,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     if (res.status === 401 && token) setSession(null);
-    const detail = data?.detail;
-    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail ?? res.statusText));
+    throw new Error(errorMessage(data?.detail, res.status));
   }
   return data as T;
 }

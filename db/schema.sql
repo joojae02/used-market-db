@@ -138,7 +138,8 @@ CREATE TABLE product (
   CONSTRAINT chk_product_not_self CHECK (
         (reserver_no IS NULL OR reserver_no <> seller_no)
     AND (buyer_no    IS NULL OR buyer_no    <> seller_no)),
-  CONSTRAINT chk_product_reserved CHECK (trade_status <> '예약중' OR reserver_no IS NOT NULL),
+  -- 예약자는 예약중일 때만 존재한다 (예약 해제·거래 완료 시 비운다)
+  CONSTRAINT chk_product_reserved CHECK ((trade_status = '예약중') = (reserver_no IS NOT NULL)),
   CONSTRAINT chk_product_completed CHECK (
         trade_status <> '판매완료' OR (buyer_no IS NOT NULL AND completed_at IS NOT NULL)),
   CONSTRAINT chk_product_deleted CHECK ((post_status = '삭제') = (deleted_at IS NOT NULL))
@@ -367,6 +368,28 @@ BEFORE INSERT ON chat_room FOR EACH ROW
 BEGIN
   IF NEW.seller_no <> (SELECT seller_no FROM product WHERE product_no = NEW.product_no) THEN
     SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '채팅방의 판매자는 상품의 판매자와 같아야 합니다.';
+  END IF;
+END//
+
+-- [TRD-04/05, 기술서 TRD-04 ④] 거래 규칙
+--  · 예약자·구매자는 그 상품의 채팅방에 참여한 회원이어야 한다
+--  · 예약중 → 판매완료 는 예약자와만 가능하다 (다른 사람과 거래하려면 예약 해제 후 지정)
+CREATE TRIGGER trg_product_trade_rule
+BEFORE UPDATE ON product FOR EACH ROW
+BEGIN
+  IF NEW.reserver_no IS NOT NULL AND NOT (NEW.reserver_no <=> OLD.reserver_no)
+     AND NOT EXISTS (SELECT 1 FROM chat_room
+                      WHERE product_no = NEW.product_no AND buyer_no = NEW.reserver_no) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '채팅에 참여한 회원만 예약자로 지정할 수 있습니다.';
+  END IF;
+  IF NEW.buyer_no IS NOT NULL AND NOT (NEW.buyer_no <=> OLD.buyer_no)
+     AND NOT EXISTS (SELECT 1 FROM chat_room
+                      WHERE product_no = NEW.product_no AND buyer_no = NEW.buyer_no) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '채팅에 참여한 회원만 구매자로 지정할 수 있습니다.';
+  END IF;
+  IF OLD.trade_status = '예약중' AND NEW.trade_status = '판매완료'
+     AND NOT (NEW.buyer_no <=> OLD.reserver_no) THEN
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '예약중인 상품은 예약자와만 거래를 완료할 수 있습니다.';
   END IF;
 END//
 
