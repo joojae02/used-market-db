@@ -12,13 +12,19 @@ export default function SanctionForm({ memberNo, reportNo, onDone }: { memberNo:
       onSubmit={(e) => {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
+        const endAt = f.get("end_at");
         act(
           () =>
             api(`/admin/members/${memberNo}/sanctions`, {
               method: "POST",
-              body: { sanction_type: type, reason: f.get("reason"), end_at: f.get("end_at") || null, report_no: reportNo ?? null },
+              // 기존: body: { sanction_type: type, reason: f.get("reason"), end_at: f.get("end_at") || null, report_no: reportNo ?? null },
+              body: { sanction_type: type, reason: f.get("reason"), end_at: endAt ? new Date(String(endAt)).toISOString() : null, report_no: reportNo ?? null },
             }),
-          onDone,
+          // 기존: onDone,
+          () => {
+            alert("제재가 적용되었습니다.");
+            onDone();
+          },
         );
       }}
     >

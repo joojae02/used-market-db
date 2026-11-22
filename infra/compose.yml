@@ -1,0 +1,17 @@
+# EC2 에서 실행하는 배포용 compose. 같은 폴더의 .env 는 user_data 가 만든다.
+services:
+  api:
+    build: ../apps/api
+    env_file: .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL}
+    ports:
+      - "80:3000"
+    restart: unless-stopped

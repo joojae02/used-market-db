@@ -1,0 +1,36 @@
+#!/bin/bash
+# EC2 첫 부팅 때 한 번 실행된다. 로그: /var/log/cloud-init-output.log
+set -euxo pipefail
+
+# Next.js 빌드 중 메모리 부족 방지
+fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+
+curl -fsSL https://get.docker.com | sh
+
+git clone --depth 1 -b ${git_branch} ${repo_url} /opt/used-market
+cd /opt/used-market/infra
+
+cat > .env <<'ENV'
+${env_file}
+ENV
+chmod 600 .env
+set -a; . ./.env; set +a
+
+# RDS 에 스키마(+샘플 데이터) 넣기. mysql 클라이언트는 컨테이너로 실행
+# 비밀번호는 MYSQL_PWD 로 넘겨서 set -x 로그에 남지 않게 한다
+export MYSQL_PWD="$DB_PASSWORD"
+mysql_cli() {
+  docker run --rm -i -e MYSQL_PWD mysql:8.4 mysql -h "$DB_HOST" -P "$DB_PORT" -u "$DB_USER" --default-character-set=utf8mb4
+}
+until echo 'SELECT 1' | mysql_cli; do sleep 10; done
+mysql_cli < ../db/schema.sql
+%{ if load_sample_data ~}
+mysql_cli < ../db/sample_data.sql
+%{ endif ~}
+
+docker compose up -d --build
+
+%{ if load_sample_data ~}
+docker compose exec -T api uv run --no-sync python -m scripts.demo_passwords
+%{ endif ~}

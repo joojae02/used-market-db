@@ -55,7 +55,8 @@ export default function AdminReportPage() {
 
       {r.report_status === "검토중" && (
         <>
-          <h3>조치 (ADM-01 / ADM-02 연계)</h3>
+          {/* 기존 문구(화면 비표시): <h3>조치 (ADM-01 / ADM-02 연계)</h3> */}
+          <h3>조치</h3>
           {r.target_type === "상품게시글" ? (
             <div className="row">
               {r.target_post_status === "정상" && <button onClick={() => productAction("블라인드")}>게시글 블라인드</button>}

@@ -3,8 +3,12 @@
 단위업무 번호는 업무기능도 기준. ①② 문단 번호는 업무기술서 본문(괄호 안 번호)을 가리킨다.
 """
 
+import mimetypes
+import os
 import uuid
 from pathlib import Path
+
+from PIL import Image, UnidentifiedImageError
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -20,26 +24,87 @@ CONDITIONS = ("새상품", "거의새것", "사용감있음", "하자있음")
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 MAX_PRICE = 4_294_967_295  # price INT UNSIGNED 최댓값
 
+# 배포 환경에서는 S3_BUCKET 을 설정해 이미지를 S3 에 올린다. 없으면 로컬 uploads 폴더에 저장
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_PUBLIC_URL = os.getenv("S3_PUBLIC_URL", f"https://{S3_BUCKET}.s3.amazonaws.com")
+if S3_BUCKET:
+    import boto3
+
+    _s3 = boto3.client("s3")
+
 
 class BuyerIn(BaseModel):
     buyer_no: int
 
 
 def _check_images(files: list[UploadFile]) -> None:
-    # 업로드 폴더는 그대로 웹에 노출되므로 이미지 확장자만 받는다 (.html 등 차단)
+    # ===== [기존 구현 - 비활성] 파일 확장자만 검사 =====
+    # # 업로드 폴더는 그대로 웹에 노출되므로 이미지 확장자만 받는다 (.html 등 차단)
+    # for f in files:
+    #     if f.filename and Path(f.filename).suffix.lower() not in IMAGE_EXTS:
+    #         raise HTTPException(422, f"이미지 파일만 올릴 수 있습니다. ({', '.join(IMAGE_EXTS)})")
+    # ===== [수정 구현 - 활성] =====
+    # 확장자와 MIME뿐 아니라 실제 디코딩 가능한 이미지인지 검사한다.
+    formats = {
+        ".jpg": ("JPEG", "image/jpeg"),
+        ".jpeg": ("JPEG", "image/jpeg"),
+        ".png": ("PNG", "image/png"),
+        ".gif": ("GIF", "image/gif"),
+        ".webp": ("WEBP", "image/webp"),
+    }
+    max_bytes = 15 * 1024 * 1024
+    max_pixels = 30_000_000
     for f in files:
-        if f.filename and Path(f.filename).suffix.lower() not in IMAGE_EXTS:
+        if not f.filename:
+            continue
+        ext = Path(f.filename).suffix.lower()
+        expected = formats.get(ext)
+        if expected is None:
             raise HTTPException(422, f"이미지 파일만 올릴 수 있습니다. ({', '.join(IMAGE_EXTS)})")
+        expected_format, expected_mime = expected
+        if f.content_type != expected_mime:
+            raise HTTPException(422, "이미지 파일의 MIME 타입이 확장자와 다릅니다.")
+
+        try:
+            f.file.seek(0, os.SEEK_END)
+            size = f.file.tell()
+            f.file.seek(0)
+            if size == 0:
+                raise HTTPException(422, "빈 이미지 파일은 업로드할 수 없습니다.")
+            if size > max_bytes:
+                raise HTTPException(413, "이미지 크기는 15MiB 이하여야 합니다.")
+            with Image.open(f.file) as image:
+                if image.format != expected_format:
+                    raise HTTPException(422, "확장자와 실제 이미지 형식이 다릅니다.")
+                if image.width * image.height > max_pixels:
+                    raise HTTPException(413, "이미지 해상도가 너무 높습니다.")
+                image.verify()
+            # 헤더만 맞고 픽셀 데이터가 손상된 파일도 거부한다.
+            f.file.seek(0)
+            with Image.open(f.file) as image:
+                image.load()
+        except (UnidentifiedImageError, OSError, ValueError, SyntaxError, Image.DecompressionBombError) as exc:
+            raise HTTPException(422, "정상적인 이미지 파일이 아닙니다.") from exc
+        finally:
+            # _save_images가 동일 스트림에서 원본을 읽으므로 위치 복원.
+            f.file.seek(0)
 
 
 def _save_images(conn, product_no: int, files: list[UploadFile]) -> None:
     for order, f in enumerate(f for f in files if f.filename):
         name = f"{uuid.uuid4().hex}{Path(f.filename).suffix.lower()}"
-        (UPLOAD_DIR / name).write_bytes(f.file.read())
+        if S3_BUCKET:
+            key = f"products/{name}"
+            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            _s3.put_object(Bucket=S3_BUCKET, Key=key, Body=f.file.read(), ContentType=content_type)
+            path = f"{S3_PUBLIC_URL}/{key}"
+        else:
+            (UPLOAD_DIR / name).write_bytes(f.file.read())
+            path = f"/uploads/{name}"
         execute(
             conn,
             "INSERT INTO product_image (product_no, image_path, image_order) VALUES (%s,%s,%s)",
-            (product_no, f"/uploads/{name}", order),
+            (product_no, path, order),
         )
 
 

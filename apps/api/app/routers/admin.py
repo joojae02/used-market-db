@@ -1,6 +1,7 @@
 """운영 관리 (ADM-01 회원 관리/제재, ADM-02 게시글 관리, ADM-03 신고 처리) + 권한 관리(root)"""
 
-from datetime import datetime
+# 기존: from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 import pymysql
@@ -124,10 +125,26 @@ def member_detail(member_no: int, conn=Depends(get_db), _=Depends(admin_member))
 
 @router.post("/members/{member_no}/sanctions", status_code=201)
 def sanction(member_no: int, body: SanctionIn, conn=Depends(get_db), admin=Depends(admin_member)):
+    # ===== [기존 구현 - 비활성] 시간대 미포함 datetime과 직접 비교 =====
+    # if body.sanction_type == "일시정지":
+    #     if body.end_at is None:
+    #         raise HTTPException(422, "일시정지는 종료예정일시가 필요합니다.")
+    #     if body.end_at <= datetime.now():
+    #         raise HTTPException(422, "종료예정일시는 현재 이후여야 합니다.")
+    # ===== [수정 구현 - 활성] =====
+    end_at_for_db = None
     if body.sanction_type == "일시정지":
         if body.end_at is None:
             raise HTTPException(422, "일시정지는 종료예정일시가 필요합니다.")
-        if body.end_at <= datetime.now():
+        if body.end_at.tzinfo is not None and body.end_at.utcoffset() is not None:
+            # 오프셋 포함 시각은 UTC의 naive DATETIME으로 저장한다.
+            end_at_for_db = body.end_at.astimezone(timezone.utc).replace(tzinfo=None)
+            now_for_compare = datetime.now(timezone.utc).replace(tzinfo=None)
+        else:
+            # 기존 클라이언트의 오프셋 없는 시각은 이전과 같이 서버 현지시각으로 해석.
+            end_at_for_db = body.end_at
+            now_for_compare = datetime.now()
+        if end_at_for_db <= now_for_compare:
             raise HTTPException(422, "종료예정일시는 현재 이후여야 합니다.")
     if member_no == admin["member_no"]:
         raise HTTPException(400, "자기 자신은 제재할 수 없습니다.")
@@ -146,7 +163,8 @@ def sanction(member_no: int, body: SanctionIn, conn=Depends(get_db), admin=Depen
             """SELECT sanction_no, sanction_type FROM member_sanction
                 WHERE member_no=%s AND released_at IS NULL AND sanction_type IN ('일시정지','영구정지')
                   AND (end_at IS NULL OR end_at > NOW())
-                ORDER BY sanction_type='영구정지' DESC LIMIT 1""",
+                /* 기존: ORDER BY sanction_type='영구정지' DESC LIMIT 1 */
+                ORDER BY sanction_type='영구정지' DESC LIMIT 1 FOR UPDATE""",
             (member_no,),
         )
         if active and not (active["sanction_type"] == "일시정지" and body.sanction_type == "영구정지"):
@@ -159,7 +177,8 @@ def sanction(member_no: int, body: SanctionIn, conn=Depends(get_db), admin=Depen
             """INSERT INTO member_sanction (member_no, admin_no, report_no, sanction_type, reason, end_at)
                VALUES (%s,%s,%s,%s,%s,%s)""",
             (member_no, admin["member_no"], body.report_no, body.sanction_type, body.reason,
-             body.end_at if body.sanction_type == "일시정지" else None),
+             # 기존: body.end_at if body.sanction_type == "일시정지" else None),
+             end_at_for_db),
         )
     except pymysql.err.OperationalError as e:
         raise _db_error(e)
