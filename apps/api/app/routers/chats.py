@@ -64,12 +64,25 @@ def open_chat(product_no: int, member=Depends(current_member), conn=Depends(get_
     seller = fetch_one(conn, "SELECT account_status FROM member WHERE member_no=%s", (p["seller_no"],))
     if seller["account_status"] != "정상":  # 탈퇴·이용정지 판매자와는 새 거래를 시작하지 않는다
         raise HTTPException(409, f"판매자 계정이 '{seller['account_status']}' 상태라 채팅할 수 없습니다.")
-    room_no = execute(
-        conn,
-        "INSERT INTO chat_room (product_no, seller_no, buyer_no) VALUES (%s,%s,%s)",
-        (product_no, p["seller_no"], member["member_no"]),
-    )
-    return {"room_no": room_no, "created": True}
+    # ===== [기존 구현 - 비활성] 조회 후 별도 INSERT =====
+    # room_no = execute(
+    #     conn,
+    #     "INSERT INTO chat_room (product_no, seller_no, buyer_no) VALUES (%s,%s,%s)",
+    #     (product_no, p["seller_no"], member["member_no"]),
+    # )
+    # return {"room_no": room_no, "created": True}
+    # ===== [수정 구현 - 활성] =====
+    # 단일 SQL로 채팅방을 생성하거나 기존 방 ID를 반환한다.
+    # 동일 요청 경합 시 UNIQUE 충돌을 HTTP 500으로 노출하지 않는다.
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO chat_room (product_no, seller_no, buyer_no) VALUES (%s,%s,%s)
+               ON DUPLICATE KEY UPDATE room_no=LAST_INSERT_ID(room_no)""",
+            (product_no, p["seller_no"], member["member_no"]),
+        )
+        room_no = cur.lastrowid
+        created = cur.rowcount == 1
+    return {"room_no": room_no, "created": created}
 
 
 @router.get("/products/{product_no}/chats")

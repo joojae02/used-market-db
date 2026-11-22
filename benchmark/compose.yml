@@ -1,0 +1,33 @@
+# 완전히 격리된 테스트 환경. 운영 EC2/RDS/S3에 연결하지 않는다.
+# 명령: docker compose -p used-market-bench -f benchmark/compose.yml up -d --build
+services:
+  db:
+    image: mysql:8.4
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: "benchmark-local-only"
+    volumes:
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 4s
+      timeout: 3s
+      retries: 35
+    # DB 포트는 호스트에 노출하지 않음
+  api:
+    build:
+      context: ../apps/api
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_USER: root
+      DB_PASSWORD: "benchmark-local-only"
+      DB_NAME: used_market
+      SECRET_KEY: "benchmark-secret-only-do-not-use-in-production"
+      CORS_ORIGINS: "http://127.0.0.1:18080"
+      S3_BUCKET: ""
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:18080:8000"
