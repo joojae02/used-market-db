@@ -47,6 +47,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
   return data as T;
 }
 
-export const imageUrl = (path: string) => API_URL + path;
+/** 로컬 저장은 API 기준 상대경로(/uploads/..), S3 저장은 전체 URL */
+export const imageUrl = (path: string) => (/^https?:\/\//.test(path) ? path : API_URL + path);
 export const won = (n: number) => n.toLocaleString("ko-KR") + "원";
 export const dt = (s?: string | null) => (s ? s.replace("T", " ").slice(0, 16) : "-");

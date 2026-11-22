@@ -3,6 +3,8 @@
 단위업무 번호는 업무기능도 기준. ①② 문단 번호는 업무기술서 본문(괄호 안 번호)을 가리킨다.
 """
 
+import mimetypes
+import os
 import uuid
 from pathlib import Path
 
@@ -20,6 +22,14 @@ CONDITIONS = ("새상품", "거의새것", "사용감있음", "하자있음")
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 MAX_PRICE = 4_294_967_295  # price INT UNSIGNED 최댓값
 
+# 배포 환경에서는 S3_BUCKET 을 설정해 이미지를 S3 에 올린다. 없으면 로컬 uploads 폴더에 저장
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_PUBLIC_URL = os.getenv("S3_PUBLIC_URL", f"https://{S3_BUCKET}.s3.amazonaws.com")
+if S3_BUCKET:
+    import boto3
+
+    _s3 = boto3.client("s3")
+
 
 class BuyerIn(BaseModel):
     buyer_no: int
@@ -35,11 +45,18 @@ def _check_images(files: list[UploadFile]) -> None:
 def _save_images(conn, product_no: int, files: list[UploadFile]) -> None:
     for order, f in enumerate(f for f in files if f.filename):
         name = f"{uuid.uuid4().hex}{Path(f.filename).suffix.lower()}"
-        (UPLOAD_DIR / name).write_bytes(f.file.read())
+        if S3_BUCKET:
+            key = f"products/{name}"
+            content_type = mimetypes.guess_type(name)[0] or "application/octet-stream"
+            _s3.put_object(Bucket=S3_BUCKET, Key=key, Body=f.file.read(), ContentType=content_type)
+            path = f"{S3_PUBLIC_URL}/{key}"
+        else:
+            (UPLOAD_DIR / name).write_bytes(f.file.read())
+            path = f"/uploads/{name}"
         execute(
             conn,
             "INSERT INTO product_image (product_no, image_path, image_order) VALUES (%s,%s,%s)",
-            (product_no, f"/uploads/{name}", order),
+            (product_no, path, order),
         )
 
 

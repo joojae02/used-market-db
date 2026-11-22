@@ -12,6 +12,8 @@ db/
   schema.sql   물리 설계 DDL (MySQL 8, 트리거·CHECK 포함)
 docs/
   문서-불일치-정리.md   산출물 간 불일치, 미구현 항목, 코드의 임시 해석
+infra/
+  Terraform 데모 배포 (EC2 + RDS MySQL + S3). 사용법은 infra/README.md
 ```
 
 ## 실행 튜토리얼
